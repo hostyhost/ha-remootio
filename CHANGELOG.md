@@ -1,0 +1,67 @@
+# Changelog
+
+All notable changes to this project are documented in this file.
+
+## v2.0.0
+
+First release of the **self-contained** fork of the Remootio integration for
+Home Assistant — installable via HACS with **zero external dependencies**.
+
+### Highlights
+
+- **Self-contained, no external dependencies.** The `aioremootio` WebSocket
+  client is vendored inside the integration and `manifest.json` declares an
+  empty `"requirements": []`. Nothing is fetched from PyPI or GitHub at install
+  time, so it works in restricted/offline environments.
+- **Modernized cryptography.** AES-256-CBC and HMAC-SHA256 are now implemented
+  with the [`cryptography`](https://cryptography.io/) library and the Python
+  standard library (`hmac`, `hashlib`, `os.urandom`) instead of
+  `pycryptodome`. The wire protocol is byte-for-byte identical; MAC
+  verification uses `hmac.compare_digest`.
+- **Reauthentication flow.** If the device's API keys change, Home Assistant
+  prompts you to re-enter them. Credentials are validated against the *same*
+  device — entering keys for a different device is rejected.
+
+### Added
+
+- Reauth flow (`reauth` / `reauth_confirm`) with a `wrong_device` safeguard.
+- Device registry info: manufacturer (Assemblabs Ltd), model (from the
+  device type), serial number, and API version.
+- `remootio_left_open` Home Assistant event when the device reports it was
+  left open.
+
+### Changed
+
+- Removed the `async-class` dependency: the client is now a plain class with a
+  `RemootioClient.create(...)` classmethod and an internal task store.
+- Connection failures surface promptly instead of hanging (~60s before).
+- The integration stores its client in `entry.runtime_data` and maps errors to
+  `ConfigEntryAuthFailed` / `ConfigEntryNotReady`.
+- Config flow uses the modern `ConfigFlow` / `ConfigFlowResult` APIs and never
+  logs secrets.
+- `manifest.json` version bumped to `2.0.0`, `integration_type: device`,
+  `iot_class: local_push`, empty `requirements`.
+
+### Requirements
+
+- Home Assistant **2024.6.0** or newer.
+- A Remootio device on Wi-Fi with a fixed IP/host name, a status sensor
+  installed, and the WebSocket API enabled.
+
+### Installation
+
+Install via HACS (add as a custom repository of type *Integration*) or copy
+`custom_components/remootio` into your `config/custom_components/` directory,
+then restart Home Assistant and add the integration from
+**Settings → Devices & Services**.
+
+### Credits
+
+A modernized, self-contained fork of the original work by **ivgg-me** /
+[`sam43434/remootio`](https://github.com/sam43434/remootio) and
+**Gergő Gábor Ilyés-Veisz** /
+[`sam43434/aioremootio`](https://github.com/sam43434/aioremootio). The vendored
+client retains its Apache License 2.0 headers; distributed under Apache 2.0.
+
+"Remootio" is a trademark of Assemblabs Ltd. This project is not affiliated
+with or endorsed by Assemblabs Ltd.
