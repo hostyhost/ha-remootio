@@ -74,7 +74,8 @@ from .constants import \
     TASK_STARTED_DELAY, \
     TASK_STOPPED_TIMEOUT, \
     ADDING_STATE_CHANGE_LISTENER_LOCK_DELAY, \
-    ADDING_EVENT_LISTENERS_LOCK_DELAY
+    ADDING_EVENT_LISTENERS_LOCK_DELAY, \
+    WS_CONNECT_TIMEOUT
 
 
 class _TaskStore:
@@ -351,6 +352,8 @@ class RemootioClient:
             else:
                 self.__do_receive_and_handle_messages = False
                 self.__do_send_pings = False
+        except asyncio.CancelledError:
+            raise
         except RemootioError:
             raise
         except BaseException as ex:
@@ -433,9 +436,13 @@ class RemootioClient:
                             # Establish connection to the device
                             self.__logger.info("Establishing websocket connection to the device...")
                             try:
-                                self.__ws = await self.__client_session.ws_connect(
-                                    f"ws://{self.__connection_options.host}:8080/")
+                                async with asyncio.timeout(WS_CONNECT_TIMEOUT):
+                                    self.__ws = await self.__client_session.ws_connect(
+                                        f"ws://{self.__connection_options.host}:8080/")
                                 self.__logger.info("Websocket connection to the device has been established successfully.")
+                            except asyncio.CancelledError:
+                                self.__ws = None
+                                raise
                             except BaseException as ex:
                                 self.__ws = None
                                 if handle_connection_error:

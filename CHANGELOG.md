@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## v2.0.1
+
+Bug fixes for connection-failure handling.
+
+### Fixed
+
+- A device that is unreachable now fails with a clear **"Cannot connect"** within
+  a few seconds instead of hanging ~60 seconds and reporting **"Unknown error."**
+  `ws_connect` now uses a 10-second connect timeout.
+- `__initialize` no longer swallows `asyncio.CancelledError` (it is re-raised
+  rather than wrapped), so setup timeouts surface as `TimeoutError` /
+  `ConfigEntryNotReady` and Home Assistant's task cancellation and shutdown work
+  correctly.
+
 ## v2.0.0
 
 First release of the **self-contained** fork of the Remootio integration for
