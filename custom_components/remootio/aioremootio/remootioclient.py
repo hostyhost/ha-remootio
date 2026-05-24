@@ -740,52 +740,42 @@ class RemootioClient:
     async def __send_pings(self) -> NoReturn:
         try:
             while True:
-                if self.__do_send_pings:
-                    self.__sends_pings = True
+                if not self.__do_send_pings:
+                    self.__logger.info("Sending PINGs by this client will be now stopped.")
+                    return
 
-                    ws: Optional[ClientWebSocketResponse] = None
-                    try:
-                        ws = await self.__connect()
-                    except BaseException:
-                        self.__logger.warning("Sending PINGs by this client will be delayed "
-                                              "because connection to the device can't be established.")
-                        await asyncio.sleep(PING_SENDER_HEARTBEAT)
-                        continue
+                self.__sends_pings = True
 
+                try:
+                    ws: Optional[ClientWebSocketResponse] = await self.__connect()
                     if self.__is_ws_connected(ws):
-                        try:
-                            await self.__send_frame(PingFrame(), ws)
-                        except BaseException:
-                            self.__logger.warning("Failed to send PING.")
+                        await self.__send_frame(PingFrame(), ws)
                     else:
                         self.__logger.warning("Sending PINGs by this client will be delayed "
                                               "because connection to the device can't be established.")
+                except CancelledError:
+                    raise
+                except BaseException:
+                    self.__logger.warning(
+                        "Failed to send PING; this client will retry.",
+                        exc_info=(self.__logger.getEffectiveLevel() == logging.DEBUG))
 
-                    await asyncio.sleep(PING_SENDER_HEARTBEAT)
-                else:
-                    self.__logger.info("Sending PINGs by this client will be now stopped.")
-                    return
+                await asyncio.sleep(PING_SENDER_HEARTBEAT)
         except CancelledError:
             self.__logger.info("Sending PINGs by this client will be now stopped because of cancelling the task.")
-            raise
-        except BaseException:
-            self.__logger.exception("Sending PINGs by this client will be now stopped because of an error.")
             raise
 
     async def __receive_and_handle_messages(self) -> NoReturn:
         try:
             while True:
-                if self.__do_receive_and_handle_messages:
-                    self.__receives_and_handles_messages = True
+                if not self.__do_receive_and_handle_messages:
+                    self.__logger.info("Receiving and handling of messages by this client will be now stopped.")
+                    return
 
-                    ws: Optional[ClientWebSocketResponse] = None
-                    try:
-                        ws = await self.__connect()
-                    except BaseException:
-                        self.__logger.warning("Receiving and handling of messages by this client will be delayed "
-                                              "because connection to the device can't be established.")
-                        await asyncio.sleep(MESSAGE_HANDLER_HEARTBEAT)
-                        continue
+                self.__receives_and_handles_messages = True
+
+                try:
+                    ws: Optional[ClientWebSocketResponse] = await self.__connect()
 
                     if self.__is_ws_connected(ws):
                         async for msg in ws:
@@ -819,30 +809,33 @@ class RemootioClient:
                                 elif msg.type == WSMsgType.CLOSE:
                                     self.__logger.info("Connection was closed by the device.")
                                     await self.__handle_connection_closed()
+                                elif msg.type == WSMsgType.ERROR:
+                                    self.__logger.warning("Websocket connection to the device reported an error.")
+                                    await self.__handle_connection_closed()
                                 elif msg.type == WSMsgType.PING:
                                     await ws.pong()
                                 elif msg.type == WSMsgType.PONG:
                                     pass
                                 else:
                                     pass
+                            except CancelledError:
+                                raise
                             except BaseException:
-                                self.__logger.error("Failed to handle received message.")
-                        else:
-                            await asyncio.sleep(MESSAGE_HANDLER_HEARTBEAT)
-                    else:
-                        self.__logger.warning("Receiving and handling of messages by this client will be delayed "
-                                              "because connection to the device can't be established.")
-                        await asyncio.sleep(MESSAGE_HANDLER_HEARTBEAT)
-                else:
-                    self.__logger.info("Receiving and handling of messages by this client will be now stopped.")
-                    return
+                                self.__logger.error("Failed to handle received message.",
+                                                    exc_info=(self.__logger.getEffectiveLevel() == logging.DEBUG))
+                except CancelledError:
+                    raise
+                except BaseException:
+                    self.__logger.warning(
+                        "Receiving and handling of messages was interrupted; this client will retry to connect.",
+                        exc_info=(self.__logger.getEffectiveLevel() == logging.DEBUG))
+
+                # The websocket connection ended or could not be established; wait briefly,
+                # then the loop reconnects. This keeps the client self-healing across drops.
+                await asyncio.sleep(MESSAGE_HANDLER_HEARTBEAT)
         except CancelledError:
             self.__logger.info("Receiving and handling of messages by this client will be now stopped "
                                "because of cancelling the task.")
-            raise
-        except BaseException:
-            self.__logger.exception("Receiving and handling of messages by this client will be now stopped"
-                                    "because of an error.")
             raise
 
     def __handle_task_done(self, task: asyncio.Task) -> NoReturn:

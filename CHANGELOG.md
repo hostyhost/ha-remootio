@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## v2.0.2
+
+Self-healing reconnection.
+
+### Fixed
+
+- The background message-receiver and ping-sender loops no longer terminate
+  permanently on an unexpected error (e.g. a websocket read raising on a
+  connection reset/timeout). Both loops now treat any non-cancellation error or
+  disconnect as transient: they log, wait briefly, and reconnect — so the client
+  recovers on its own from dropped connections without needing a config-entry
+  reload or a Home Assistant restart. The loops still stop cleanly when the
+  client is terminated (`CancelledError` is always re-raised).
+- A `WSMsgType.ERROR` websocket frame is now treated as a closed connection and
+  triggers reconnection.
+
 ## v2.0.1
 
 Bug fixes for connection-failure handling.
