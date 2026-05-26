@@ -1273,6 +1273,11 @@ class RemootioClient:
         if not self.connected:
             await self.connect()
 
+        if not self.connected:
+            raise RemootioClientConnectionEstablishmentError(
+                self, "Unable to send frame because connection to the device can't be established. "
+                      "ActionType [%s]" % action_type)
+
         action_id: int = await self.__calculate_next_action_id()
         frame: ActionRequestFrame = ActionRequestFrame(action_id, action_type)
 

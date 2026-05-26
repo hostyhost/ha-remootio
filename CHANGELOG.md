@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## v2.0.4
+
+Quieter, cleaner behavior while disconnected.
+
+### Fixed
+
+- Sending an action (state poll, open, or close) while the device is unreachable
+  no longer raises a `TypeError` (`__last_action_id` was `None`). `__trigger` now
+  raises a clear `RemootioClientConnectionEstablishmentError` when no connection
+  can be established.
+- The cover's periodic poll now only queries the device when connected;
+  reconnection is left to the client's self-healing loop, so polls during an
+  outage are a quiet no-op instead of logging an error every interval.
+
 ## v2.0.3
 
 Keep cover state in sync with the device.

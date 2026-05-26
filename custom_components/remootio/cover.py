@@ -82,8 +82,13 @@ class RemootioCover(CoverEntity):
         self.async_schedule_update_ha_state(force_refresh=True)
 
     async def async_update(self) -> None:
-        """Trigger a state update of the used Remootio client."""
-        await self._client.trigger_state_update()
+        """Refresh state from the device when connected.
+
+        Reconnection is handled by the client's self-healing background loop, so a
+        poll while disconnected is a no-op rather than an error.
+        """
+        if self._client.connected:
+            await self._client.trigger_state_update()
 
     @property
     def available(self) -> bool:
