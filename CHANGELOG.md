@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## v2.0.3
+
+Keep cover state in sync with the device.
+
+### Fixed
+
+- The cover could get stuck on a stale state (e.g. showing `opening`/`open`
+  while the door was actually closed) when the device dropped its websocket
+  around an operation and never re-pushed the follow-up state-change event.
+  The entity now polls the device periodically (every 30s) as a backstop, so a
+  missed push event self-corrects within the interval. Pushed events still
+  update state instantly; the periodic query also acts as a keepalive and
+  reconnect trigger.
+
 ## v2.0.2
 
 Self-healing reconnection.

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from typing import Any
 
 from homeassistant.components.cover import (
@@ -27,6 +28,11 @@ from .const import ATTR_SERIAL_NUMBER, CONF_SERIAL_NUMBER, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
+# The device pushes state changes, but it can drop its websocket around operations
+# and miss an event. Poll periodically as a backstop so a missed event self-corrects
+# (and the query doubles as a keepalive / reconnect trigger).
+SCAN_INTERVAL = timedelta(seconds=30)
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -46,7 +52,7 @@ class RemootioCover(CoverEntity):
 
     _attr_has_entity_name = True
     _attr_name = None
-    _attr_should_poll = False
+    _attr_should_poll = True
     _attr_supported_features = CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE
 
     def __init__(
