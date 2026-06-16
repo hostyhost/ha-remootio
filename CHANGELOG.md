@@ -2,6 +2,31 @@
 
 All notable changes to this project are documented in this file.
 
+## v2.0.6
+
+Stop the recurring `AUTHENTICATION_ERROR` / reconnect churn around door operations.
+
+### Fixed
+
+- Action requests sent to the device are now serialized through a single lock
+  that is held across id allocation, encryption, and the actual websocket send.
+  Previously a background state poll could overlap a user- or automation-initiated
+  `OPEN`/`CLOSE` and place a frame on the wire out of action-id order. Remootio
+  closes the session with an `AUTHENTICATION_ERROR` whenever it receives an action
+  id that isn't exactly the previous id incremented by one, which dropped the
+  connection (briefly flipping the cover to `unavailable`) and lost the door's
+  in-progress state every time the gate was operated. The initial authentication
+  `QUERY` shares the same lock.
+
+### Changed
+
+- The cover's backstop poll interval was relaxed from **30s to 90s**. The client
+  already sends a `PING` keepalive every 60s (within Remootio's recommended
+  60–90s window), so the periodic `QUERY` only needs to recover an occasionally
+  missed push event. The longer interval cuts action-id traffic and the window in
+  which a poll can collide with a real door operation, while a missed state push
+  still self-corrects within the interval.
+
 ## v2.0.5
 
 Smoother recovery when the device rejects authentication.
