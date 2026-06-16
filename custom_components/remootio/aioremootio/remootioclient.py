@@ -909,7 +909,7 @@ class RemootioClient:
             await self.__disconnect()
         elif frame.error_type == ErrorType.AUTHENTICATION_TIMEOUT:
             await self.__disconnect()
-        elif frame.error_type == ErrorType.AUTHENTICATION_TIMEOUT:
+        elif frame.error_type == ErrorType.AUTHENTICATION_ERROR:
             await self.__disconnect()
         elif frame.error_type == ErrorType.ALREADY_AUTHENTICATED:
             self.__authenticated = True

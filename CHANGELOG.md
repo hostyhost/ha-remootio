@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## v2.0.5
+
+Smoother recovery when the device rejects authentication.
+
+### Fixed
+
+- `ErrorType.AUTHENTICATION_ERROR` from the device is now handled explicitly:
+  the client forces a clean disconnect (clearing the session key and per-session
+  state) so the self-healing loop reconnects with a fresh authentication
+  sequence, instead of just logging the error and leaving the half-authenticated
+  state in place. Helps when the device's session state gets wedged after rapid
+  drop/reconnect cycles on a flaky link.
+- Replaced a duplicate `AUTHENTICATION_TIMEOUT` branch (dead code from the
+  upstream) with the new `AUTHENTICATION_ERROR` branch.
+
 ## v2.0.4
 
 Quieter, cleaner behavior while disconnected.
