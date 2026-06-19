@@ -117,6 +117,7 @@ class RemootioClient:
     __uptime: Optional[int]
     __state: State
     __updating_last_action_id_lock: asyncio.Lock
+    __action_lock: asyncio.Lock
     __last_action_id: Optional[int]
     __authenticating: bool
     __authenticated: bool
@@ -245,6 +246,7 @@ class RemootioClient:
         self.__uptime = None
         self.__state = State.UNKNOWN
         self.__updating_last_action_id_lock = asyncio.Lock()
+        self.__action_lock = asyncio.Lock()
         self.__last_action_id = None
         self.__authenticating = False
         self.__authenticated = False
@@ -493,8 +495,14 @@ class RemootioClient:
             else:
                 raise RemootioClientError(self, "Received frame isn't the expected.")
 
-            await self.__encrypt_and_send_frame(
-                ActionRequestFrame(await self.__calculate_next_action_id(), ActionType.QUERY), ws=ws)
+            # Serialize the initial QUERY through the same action lock used by
+            # __trigger so it can never race a concurrent action onto the wire.
+            # Safe from deadlock: authentication completes (and the lock is
+            # released) before the client reports as connected, which is a
+            # precondition for __trigger to reach its own acquisition.
+            async with self.__action_lock:
+                await self.__encrypt_and_send_frame(
+                    ActionRequestFrame(await self.__calculate_next_action_id(), ActionType.QUERY), ws=ws)
 
             frame = await ws.receive_json(timeout=30)
             frame_type: FrameType = retrieve_frame_type(frame)
@@ -1278,10 +1286,17 @@ class RemootioClient:
                 self, "Unable to send frame because connection to the device can't be established. "
                       "ActionType [%s]" % action_type)
 
-        action_id: int = await self.__calculate_next_action_id()
-        frame: ActionRequestFrame = ActionRequestFrame(action_id, action_type)
+        # Hold the action lock across id allocation, encryption and the actual send,
+        # so concurrent triggers (e.g. the background QUERY poll overlapping a
+        # user-initiated OPEN/CLOSE) can't interleave and place a frame on the wire
+        # out of action-id order. Remootio closes the session with an
+        # AUTHENTICATION_ERROR if it ever receives an id that isn't exactly the
+        # previous action id incremented by one.
+        async with self.__action_lock:
+            action_id: int = await self.__calculate_next_action_id()
+            frame: ActionRequestFrame = ActionRequestFrame(action_id, action_type)
 
-        await self.__encrypt_and_send_frame(frame)
+            await self.__encrypt_and_send_frame(frame)
 
     # ----------------------------------------
     # Public accessible methods and properties

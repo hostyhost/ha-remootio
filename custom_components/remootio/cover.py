@@ -29,9 +29,12 @@ from .const import ATTR_SERIAL_NUMBER, CONF_SERIAL_NUMBER, DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 # The device pushes state changes, but it can drop its websocket around operations
-# and miss an event. Poll periodically as a backstop so a missed event self-corrects
-# (and the query doubles as a keepalive / reconnect trigger).
-SCAN_INTERVAL = timedelta(seconds=30)
+# and miss an event. Poll occasionally as a backstop so a missed event self-corrects.
+# Kept deliberately infrequent: the client already sends a PING keepalive every 60s
+# (within Remootio's recommended 60-90s window), so this QUERY exists only to recover
+# a missed push. A short interval just adds action-id traffic that can collide with a
+# user-initiated OPEN/CLOSE and trip the device's AUTHENTICATION_ERROR session reset.
+SCAN_INTERVAL = timedelta(seconds=90)
 
 
 async def async_setup_entry(
