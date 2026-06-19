@@ -30,10 +30,23 @@ environments.
 - Live state updates (open / closed / opening / closing) via local push.
 - Device information (model, serial number, API version) in the device
   registry.
-- A `remootio_left_open` Home Assistant event fired when the device reports the
-  door/gate was left open.
+- **Sensors:** *Last operated by* (which key and connection method),
+  *Last event*, *Uptime*, and *Left open duration*.
+- **Binary sensors:** *Connectivity*, *Left open*, *Status sensor enabled*,
+  *Manual button enabled*, *Doorbell enabled*, and *Relay output 1/2 active*.
+- **Buttons:** *Trigger* (pulses the control output regardless of the known
+  state), *Trigger secondary output*, and *Restart device*.
+- Device events on the Home Assistant event bus (`remootio_left_open`,
+  `remootio_relay_trigger`, `remootio_doorbell_pushed`,
+  `remootio_manual_button_pushed`, and more) for use as automation triggers.
 - A **reauthentication** flow: if the API keys change, Home Assistant prompts
   you to enter the new keys for the same device.
+
+> The Remootio Websocket API is control/telemetry only, so device settings
+> (sensor logic, auto-open, key management) are exposed as **read-only**
+> sensors, and Wi-Fi signal / sensor battery / firmware version are not
+> available through the API. Event-driven status entities require the device's
+> **API logging** to be enabled.
 
 ## Requirements
 

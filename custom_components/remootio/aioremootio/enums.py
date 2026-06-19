@@ -50,8 +50,10 @@ class ErrorType(Enum):
 class ActionType(Enum):
     QUERY = "QUERY"
     TRIGGER = "TRIGGER"
+    TRIGGER_SECONDARY = "TRIGGER_SECONDARY"
     OPEN = "OPEN"
     CLOSE = "CLOSE"
+    RESTART = "RESTART"
     UNSUPPORTED = "UNSUPPORTED"
 
     @classmethod
@@ -66,8 +68,26 @@ class EventType(Enum):
 
     STATE_CHANGE = "StateChange"
     RELAY_TRIGGER = "RelayTrigger"
+    SECONDARY_RELAY_TRIGGER = "SecondaryRelayTrigger"
+    OUTPUT_HELD_ACTIVE = "OutputHeldActive"
+    SECONDARY_OUTPUT_HELD_ACTIVE = "SecondaryOutputHeldActive"
+    KEY_CONNECTED = "Connected"
+    KEY_MANAGEMENT = "KeyManagement"
     LEFT_OPEN = "LeftOpen"
     RESTART = "Restart"
+    MANUAL_BUTTON_PUSHED = "ManualButtonPushed"
+    MANUAL_BUTTON_ENABLED = "ManualButtonEnabled"
+    MANUAL_BUTTON_DISABLED = "ManualButtonDisabled"
+    DOORBELL_PUSHED = "DoorbellPushed"
+    DOORBELL_ENABLED = "DoorbellEnabled"
+    DOORBELL_DISABLED = "DoorbellDisabled"
+    SENSOR_ENABLED = "SensorEnabled"
+    SENSOR_FLIPPED = "SensorFlipped"
+    SENSOR_DISABLED = "SensorDisabled"
+    OUTPUT1_ACTIVATED = "Output1Activated"
+    OUTPUT1_DEACTIVATED = "Output1Deactivated"
+    OUTPUT2_ACTIVATED = "Output2Activated"
+    OUTPUT2_DEACTIVATED = "Output2Deactivated"
     UNSUPPORTED = "Unsupported"
     CONNECTED = "connected"
     DISCONNECTED = "disconnected"
@@ -100,6 +120,7 @@ class KeyType(Enum):
 class DeviceType(Enum):
     REMOOTIO_1 = "remootio-1"
     REMOOTIO_2 = "remootio-2"
+    REMOOTIO_3 = "remootio-3"
     UNKNOWN = "unknown"
 
     @classmethod

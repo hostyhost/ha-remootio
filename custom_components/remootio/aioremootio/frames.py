@@ -239,6 +239,8 @@ class EventFrame(AbstractFrame, AbstractStateHolderFrame, AbstractUptimeHolderFr
         self.__event_source = None
         self.__event_type = EventType(json["event"]["type"])
         self.__key = None
+        self.__cnt = json["event"].get("cnt")
+        self.__data = json["event"].get("data", {}) or {}
 
         if "data" in json["event"]:
             if "keyType" in json["event"]["data"] and "keyNr" in json["event"]["data"]:
@@ -258,6 +260,22 @@ class EventFrame(AbstractFrame, AbstractStateHolderFrame, AbstractUptimeHolderFr
     @property
     def key(self) -> Optional[Key]:
         return self.__key
+
+    @property
+    def cnt(self) -> Optional[int]:
+        """Event counter as reported by the device (resets to 0 on restart)."""
+        return self.__cnt
+
+    @property
+    def data(self) -> dict:
+        """Raw, event-type-specific ``data`` object (may be empty)."""
+        return self.__data
+
+    @property
+    def left_open_duration(self) -> Optional[float]:
+        """For ``LeftOpen`` events: how long the door has been open, in seconds."""
+        value = self.__data.get("timeOpen100ms")
+        return value * 100 / 1000 if value is not None else None
 
     @property
     def json(self) -> dict:
