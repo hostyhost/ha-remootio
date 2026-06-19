@@ -12,7 +12,6 @@ from homeassistant.components.cover import (
 )
 from homeassistant.const import ATTR_ENTITY_ID, ATTR_NAME, CONF_DEVICE_CLASS
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import RemootioConfigEntry
@@ -25,6 +24,7 @@ from .aioremootio import (
     StateChange,
 )
 from .const import ATTR_SERIAL_NUMBER, CONF_SERIAL_NUMBER, DOMAIN
+from .entity import build_device_info
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -66,14 +66,10 @@ class RemootioCover(CoverEntity):
     ) -> None:
         """Initialize this cover entity."""
         self._client = client
+        self._serial_number = serial_number
         self._attr_unique_id = serial_number
         self._attr_device_class = device_class
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, serial_number)},
-            manufacturer="Assemblabs Ltd",
-            model=client.device_type.value if client.device_type is not None else None,
-            sw_version=f"API v{client.api_version}",
-        )
+        self._attr_device_info = build_device_info(serial_number, client)
 
     async def async_added_to_hass(self) -> None:
         """Register listeners on the client to be notified about state changes and events."""
@@ -117,6 +113,15 @@ class RemootioCover(CoverEntity):
         if self._client.state in (State.UNKNOWN, State.NO_SENSOR_INSTALLED):
             return None
         return self._client.state == State.CLOSED
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Expose device identity/diagnostic details on the cover entity."""
+        return {
+            ATTR_SERIAL_NUMBER: self._serial_number,
+            "api_version": self._client.api_version,
+            "uptime": self._client.uptime,
+        }
 
     async def async_open_cover(self, **kwargs: Any) -> None:
         """Open the garage door or gate."""

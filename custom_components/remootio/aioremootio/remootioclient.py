@@ -245,6 +245,20 @@ class RemootioClient:
         self.__device_type = None
         self.__uptime = None
         self.__state = State.UNKNOWN
+        # Extended telemetry derived from device events (see __handle_event_frame).
+        self.__last_event_type = None
+        self.__last_event_source = None
+        self.__last_event_key = None
+        self.__last_event_cnt = None
+        self.__sensor_enabled = None
+        self.__sensor_flipped = None
+        self.__manual_button_enabled = None
+        self.__doorbell_enabled = None
+        self.__output1_active = None
+        self.__output2_active = None
+        self.__left_open = None
+        self.__left_open_duration = None
+        self.__update_listeners = []
         self.__updating_last_action_id_lock = asyncio.Lock()
         self.__action_lock = asyncio.Lock()
         self.__last_action_id = None
@@ -463,6 +477,7 @@ class RemootioClient:
 
                         if self.connected:
                             await self.__invoke_event_listeners(Event(EventSource.CLIENT, EventType.CONNECTED, None))
+                            self.__notify_update()
                     finally:
                         self.__lifecycle.notify_all()
             finally:
@@ -592,6 +607,7 @@ class RemootioClient:
 
                     if not self.connected:
                         await self.__invoke_event_listeners(Event(EventSource.CLIENT, EventType.DISCONNECTED, None))
+                        self.__notify_update()
                 finally:
                     self.__lifecycle.notify_all()
         finally:
@@ -987,36 +1003,77 @@ class RemootioClient:
     async def __handle_event_frame(self, frame: EventFrame) -> NoReturn:
         self.__logger.debug("Handling received EventFrame... EventType [%s]" % frame.event_type)
 
-        if frame.event_type != EventType.UNSUPPORTED:
-            if frame.event_type == EventType.RESTART or self.__uptime < frame.uptime:
-                self.__logger.info(
-                    "An event has been occurred on the device. EventType [%s] Key [%s] EventSource [%s]" %
-                    (frame.event_type, frame.key, frame.event_source))
-
-                self.__uptime = frame.uptime
-
-                if frame.event_type == EventType.RELAY_TRIGGER:
-                    state: State = frame.state
-                    if state == State.OPEN:
-                        state = State.CLOSING
-                    elif state == State.CLOSED:
-                        state = State.OPENING
-
-                    await self.__change_state(state)
-                elif frame.event_type == EventType.STATE_CHANGE:
-                    await self.__change_state(frame.state)
-                elif frame.event_type == EventType.LEFT_OPEN:
-                    await self.__change_state(frame.state)
-                elif frame.event_type == EventType.RESTART:
-                    await self.__change_state(frame.state)
-
-                await self.__invoke_event_listeners(Event(frame.event_source, frame.event_type, frame.key))
-            else:
-                self.__logger.debug(
-                    "An event has been occurred on the device but before this client has been connected to the device. "
-                    "EventType [%s] Key [%s] EventSource [%s]" % (frame.event_type, frame.key, frame.event_source))
-        else:
+        event_type: EventType = frame.event_type
+        if event_type == EventType.UNSUPPORTED:
             self.__logger.debug("An unsupported event has been occurred on the device.")
+            return
+
+        # On reconnect the device resends up to its last 100 events. Treat an event as "live"
+        # only when it advances the device uptime (or it's a RESTART). Live events drive the
+        # door state and fire listeners (so automations don't replay); status-type events still
+        # update the cached telemetry below, so the derived sensors initialise from history.
+        live: bool = event_type == EventType.RESTART or self.__uptime is None or self.__uptime < frame.uptime
+        if self.__uptime is None or self.__uptime < frame.uptime:
+            self.__uptime = frame.uptime
+
+        # Capture "last event" / "last operated by" telemetry for any event.
+        self.__last_event_type = event_type
+        self.__last_event_cnt = frame.cnt
+        if frame.key is not None:
+            self.__last_event_key = frame.key
+        if frame.event_source is not None:
+            self.__last_event_source = frame.event_source
+
+        if event_type in (EventType.STATE_CHANGE, EventType.RESTART):
+            if live:
+                await self.__change_state(frame.state)
+        elif event_type == EventType.RELAY_TRIGGER:
+            if live:
+                state: State = frame.state
+                if state == State.OPEN:
+                    state = State.CLOSING
+                elif state == State.CLOSED:
+                    state = State.OPENING
+                await self.__change_state(state)
+        elif event_type == EventType.LEFT_OPEN:
+            self.__left_open = True
+            self.__left_open_duration = frame.left_open_duration
+        elif event_type == EventType.SENSOR_ENABLED:
+            self.__sensor_enabled = True
+            self.__sensor_flipped = False
+        elif event_type == EventType.SENSOR_FLIPPED:
+            self.__sensor_enabled = True
+            self.__sensor_flipped = True
+        elif event_type == EventType.SENSOR_DISABLED:
+            self.__sensor_enabled = False
+        elif event_type == EventType.MANUAL_BUTTON_ENABLED:
+            self.__manual_button_enabled = True
+        elif event_type == EventType.MANUAL_BUTTON_DISABLED:
+            self.__manual_button_enabled = False
+        elif event_type == EventType.DOORBELL_ENABLED:
+            self.__doorbell_enabled = True
+        elif event_type == EventType.DOORBELL_DISABLED:
+            self.__doorbell_enabled = False
+        elif event_type == EventType.OUTPUT1_ACTIVATED:
+            self.__output1_active = True
+        elif event_type == EventType.OUTPUT1_DEACTIVATED:
+            self.__output1_active = False
+        elif event_type == EventType.OUTPUT2_ACTIVATED:
+            self.__output2_active = True
+        elif event_type == EventType.OUTPUT2_DEACTIVATED:
+            self.__output2_active = False
+
+        # A confirmed closed door clears the "left open" condition.
+        if self.__state == State.CLOSED:
+            self.__left_open = False
+
+        if live:
+            self.__logger.info(
+                "An event has been occurred on the device. EventType [%s] Key [%s] EventSource [%s]" %
+                (event_type, frame.key, frame.event_source))
+            await self.__invoke_event_listeners(Event(frame.event_source, event_type, frame.key))
+
+        self.__notify_update()
 
     async def __handle_connection_closed(self):
         await self.__disconnect()
@@ -1158,6 +1215,30 @@ class RemootioClient:
                                 "Waiting until the progress is done.")
             await asyncio.sleep(ADDING_EVENT_LISTENERS_LOCK_DELAY)
 
+    # ----------------
+    # Update listeners
+    # ----------------
+
+    def add_update_listener(self, listener) -> None:
+        """Register a zero-argument callback invoked whenever the client's cached telemetry
+        (state, connectivity, last event, sensor/button/doorbell status, outputs) changes.
+        Used by Home Assistant entities to schedule a state write."""
+        if listener is not None and listener not in self.__update_listeners:
+            self.__update_listeners.append(listener)
+
+    def remove_update_listener(self, listener) -> None:
+        """Remove a previously registered update listener."""
+        if listener in self.__update_listeners:
+            self.__update_listeners.remove(listener)
+
+    def __notify_update(self) -> None:
+        for listener in list(self.__update_listeners):
+            try:
+                listener()
+            except BaseException:
+                self.__logger.warning("An error has been occurred during invoking an update listener.",
+                                      exc_info=True)
+
     # --------------
     # State handling
     # --------------
@@ -1226,11 +1307,15 @@ class RemootioClient:
         if do_change_state:
             self.__state = new_state
 
+            if self.__state == State.CLOSED:
+                self.__left_open = False
+
             self.__logger.info(
                 "Last known state of the device has been changed. OldState [%s] NewState [%s]" %
                 (old_state, self.state))
 
             await self.__invoke_state_change_listeners(StateChange(old_state, self.state))
+            self.__notify_update()
 
     # --------------
     # Helper methods
@@ -1425,6 +1510,23 @@ class RemootioClient:
 
         await self.__trigger(ActionType.QUERY)
 
+    async def trigger_secondary(self) -> NoReturn:
+        """
+        Sends a ``TRIGGER_SECONDARY`` action to operate the device's secondary (free) relay output.
+        Only supported by devices that expose a second relay; otherwise the device answers with an error.
+        """
+        self.__logger.info("Triggering the device's secondary relay output...")
+
+        await self.__trigger(ActionType.TRIGGER_SECONDARY)
+
+    async def restart(self) -> NoReturn:
+        """
+        Sends a ``RESTART`` action to restart the Remootio device.
+        """
+        self.__logger.info("Restarting the device...")
+
+        await self.__trigger(ActionType.RESTART)
+
     @property
     def host(self) -> str:
         """
@@ -1466,6 +1568,61 @@ class RemootioClient:
         :return: Uptime of the device since last start/restart
         """
         return self.__uptime
+
+    @property
+    def last_event_type(self) -> Optional[EventType]:
+        """:return: Type of the most recent event reported by the device, if any."""
+        return self.__last_event_type
+
+    @property
+    def last_event_source(self) -> Optional[EventSource]:
+        """:return: Connection method (Bluetooth/Wi-Fi/internet/...) of the most recent operating event."""
+        return self.__last_event_source
+
+    @property
+    def last_event_key(self):
+        """:return: The ``Key`` (type + number) that last operated the device, if known."""
+        return self.__last_event_key
+
+    @property
+    def sensor_enabled(self) -> Optional[bool]:
+        """:return: Whether the device reports its status sensor as enabled (None until known)."""
+        return self.__sensor_enabled
+
+    @property
+    def sensor_flipped(self) -> Optional[bool]:
+        """:return: Whether the status sensor logic is flipped (None until known)."""
+        return self.__sensor_flipped
+
+    @property
+    def manual_button_enabled(self) -> Optional[bool]:
+        """:return: Whether the physical manual button is enabled (None until known)."""
+        return self.__manual_button_enabled
+
+    @property
+    def doorbell_enabled(self) -> Optional[bool]:
+        """:return: Whether the doorbell input is enabled (None until known)."""
+        return self.__doorbell_enabled
+
+    @property
+    def output1_active(self) -> Optional[bool]:
+        """:return: Whether the primary relay output is currently active (None until known)."""
+        return self.__output1_active
+
+    @property
+    def output2_active(self) -> Optional[bool]:
+        """:return: Whether the secondary relay output is currently active (None until known)."""
+        return self.__output2_active
+
+    @property
+    def left_open(self) -> Optional[bool]:
+        """:return: Whether the device last reported the door/gate as left open (cleared once closed)."""
+        return self.__left_open
+
+    @property
+    def left_open_duration(self) -> Optional[float]:
+        """:return: Seconds the door/gate was reported open in the most recent ``LeftOpen`` event."""
+        return self.__left_open_duration
 
     @property
     def said_hello(self):

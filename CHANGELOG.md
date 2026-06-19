@@ -2,6 +2,52 @@
 
 All notable changes to this project are documented in this file.
 
+## v2.1.0
+
+Expose everything the Remootio Websocket API offers as Home Assistant entities.
+
+### Added
+
+New `sensor`, `binary_sensor`, and `button` platforms built from the device's
+event stream and the existing `cover`:
+
+- **Sensors:** *Last operated by* (key + connection method, with `via` /
+  `key_type` / `key_number` attributes), *Last event*, *Uptime* (diagnostic),
+  and *Left open duration*.
+- **Binary sensors:** *Connectivity* (diagnostic, stays available while
+  disconnected), *Left open* (problem), *Status sensor enabled*, *Manual button
+  enabled*, *Doorbell enabled*, and *Relay output 1/2 active* (diagnostic).
+- **Buttons:** *Trigger* (pulses the control output regardless of the known
+  state — useful when the door state is uncertain), *Trigger secondary output*
+  (for devices with a free relay), and *Restart device*.
+- The `cover` now carries `serial_number`, `api_version`, and `uptime`
+  attributes, and the device **model** is now reported correctly (including
+  Remootio 3) instead of showing "unknown".
+- Device events are forwarded onto the Home Assistant event bus as
+  `remootio_relay_trigger`, `remootio_doorbell_pushed`,
+  `remootio_manual_button_pushed`, `remootio_key_management`,
+  `remootio_sensor_flipped`, `remootio_restart`, and more, for use as
+  automation triggers (`remootio_left_open` is unchanged).
+
+### Changed
+
+- The vendored `aioremootio` client now parses the full v3 event set
+  (secondary relay, key connected, key management, manual button, doorbell,
+  sensor enable/flip/disable, and relay-output activation events) and exposes
+  the derived telemetry via new client properties and an update-listener
+  callback. Replayed history on reconnect initializes the status sensors
+  without re-firing automation events.
+
+### Notes
+
+- The Remootio Websocket API is control/telemetry only — it cannot **write**
+  device settings, so items like sensor logic, auto-open, and key management
+  are exposed as **read-only** sensors, not switches. Wi-Fi signal, sensor
+  battery, and firmware version are not exposed by the API and therefore are
+  not available.
+- Event-driven status entities populate once the device sends the relevant
+  event; they require the device's **API logging** to be enabled.
+
 ## v2.0.6
 
 Stop the recurring `AUTHENTICATION_ERROR` / reconnect churn around door operations.

@@ -4,20 +4,71 @@ from __future__ import annotations
 import logging
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_HOST, Platform
+from homeassistant.const import ATTR_NAME, CONF_HOST, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 
-from .aioremootio import ConnectionOptions, RemootioClient
+from .aioremootio import ConnectionOptions, Event, EventType, Listener, RemootioClient
 from .aioremootio.errors import RemootioClientAuthenticationError, RemootioError
-from .const import CONF_API_AUTH_KEY, CONF_API_SECRET_KEY, CONF_SERIAL_NUMBER
+from .const import (
+    ATTR_SERIAL_NUMBER,
+    CONF_API_AUTH_KEY,
+    CONF_API_SECRET_KEY,
+    CONF_SERIAL_NUMBER,
+    DOMAIN,
+)
 from .utils import create_client
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.COVER]
+PLATFORMS = [
+    Platform.COVER,
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+    Platform.BUTTON,
+]
+
+# Device events forwarded onto the Home Assistant event bus as ``remootio_<type>`` for automations.
+# (``LeftOpen`` keeps its dedicated ``remootio_left_open`` event fired from cover.py.)
+EVENT_BUS_EVENT_TYPES = {
+    EventType.RELAY_TRIGGER,
+    EventType.SECONDARY_RELAY_TRIGGER,
+    EventType.KEY_CONNECTED,
+    EventType.KEY_MANAGEMENT,
+    EventType.MANUAL_BUTTON_PUSHED,
+    EventType.DOORBELL_PUSHED,
+    EventType.SENSOR_FLIPPED,
+    EventType.RESTART,
+}
 
 RemootioConfigEntry = ConfigEntry[RemootioClient]
+
+
+class RemootioEventBusListener(Listener[Event]):
+    """Forward selected device events onto the Home Assistant event bus for automations."""
+
+    def __init__(self, hass: HomeAssistant, serial_number: str) -> None:
+        super().__init__()
+        self._hass = hass
+        self._serial_number = serial_number
+
+    async def execute(self, client: RemootioClient, subject: Event) -> None:
+        if subject.type not in EVENT_BUS_EVENT_TYPES:
+            return
+
+        event_data: dict[str, object] = {
+            ATTR_SERIAL_NUMBER: self._serial_number,
+            ATTR_NAME: subject.type.name.replace("_", " ").capitalize(),
+            "event_type": subject.type.value,
+            "source": subject.source.value if subject.source is not None else None,
+        }
+        if subject.key is not None:
+            event_data["key_type"] = subject.key.key_type.value
+            event_data["key_number"] = subject.key.key_number
+
+        self._hass.bus.async_fire(
+            f"{DOMAIN}_{subject.type.name.lower()}", event_data
+        )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: RemootioConfigEntry) -> bool:
@@ -43,6 +94,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: RemootioConfigEntry) -> 
         ) from ex
 
     entry.runtime_data = client
+
+    await client.add_event_listener(RemootioEventBusListener(hass, serial_number))
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
